@@ -4537,6 +4537,116 @@ static int storage_server_fetch_one_path_binlog(struct fast_task_info *pTask)
 			pTask, store_path_index);
 }
 
+static int storage_server_create_empty_file(struct fast_task_info *pTask) {
+    StorageClientInfo *pClientInfo;
+	StorageFileContext *pFileContext;
+	DisconnectCleanFunc clean_func;
+	char *p;
+	char filename[128];
+	char file_ext_name[FDFS_FILE_PREFIX_MAX_LEN + 1];
+	int64_t nInPackLen;
+	int64_t file_offset;
+	int64_t file_bytes;
+	int crc32;
+	int store_path_index;
+	int result;
+	int filename_len;
+
+	pClientInfo = (StorageClientInfo *)pTask->arg;
+	pFileContext =  &(pClientInfo->file_context);
+	nInPackLen = pClientInfo->total_length - sizeof(TrackerHeader);
+
+	if (nInPackLen < 1 + FDFS_PROTO_PKG_LEN_SIZE + 
+			FDFS_FILE_EXT_NAME_MAX_LEN)
+	{
+		logError("file: "__FILE__", line: %d, " \
+			"cmd=%d, client ip: %s, package size " \
+			"%"PRId64" is not correct, " \
+			"expect length >= %d", __LINE__, \
+			STORAGE_PROTO_CMD_UPLOAD_FILE, \
+			pTask->client_ip,  nInPackLen, \
+			1 + FDFS_PROTO_PKG_LEN_SIZE + \
+			FDFS_FILE_EXT_NAME_MAX_LEN);
+		return EINVAL;
+	}
+
+	p = pTask->data + sizeof(TrackerHeader);
+	store_path_index = *p++;
+
+	if (store_path_index == -1)
+	{
+		if ((result=storage_get_storage_path_index( \
+			&store_path_index)) != 0)
+		{
+			logError("file: "__FILE__", line: %d, " \
+				"get_storage_path_index fail, " \
+				"errno: %d, error info: %s", __LINE__, \
+				result, STRERROR(result));
+			return result;
+		}
+	}
+	else if (store_path_index < 0 || store_path_index >= \
+		g_fdfs_store_paths.count)
+	{
+		logError("file: "__FILE__", line: %d, " \
+			"client ip: %s, store_path_index: %d " \
+			"is invalid", __LINE__, \
+			pTask->client_ip, store_path_index);
+		return EINVAL;
+	}
+
+	file_bytes = buff2long(p);
+	p += FDFS_PROTO_PKG_LEN_SIZE;
+
+	memcpy(file_ext_name, p, FDFS_FILE_EXT_NAME_MAX_LEN);
+	*(file_ext_name + FDFS_FILE_EXT_NAME_MAX_LEN) = '\0';
+	p += FDFS_FILE_EXT_NAME_MAX_LEN;
+	if ((result=fdfs_validate_filename(file_ext_name)) != 0)
+	{
+		logError("file: "__FILE__", line: %d, " \
+			"client ip: %s, file_ext_name: %s " \
+			"is invalid!", __LINE__, \
+			pTask->client_ip, file_ext_name);
+		return result;
+	}
+
+	pFileContext->calc_crc32 = false;
+	pFileContext->calc_file_hash = g_check_file_duplicate;
+	pFileContext->extra_info.upload.start_time = g_current_time;
+
+	strcpy(pFileContext->extra_info.upload.file_ext_name, file_ext_name);
+	storage_format_ext_name(file_ext_name, \
+			pFileContext->extra_info.upload.formatted_ext_name);
+	pFileContext->extra_info.upload.trunk_info.path. \
+				store_path_index = store_path_index;
+	pFileContext->extra_info.upload.file_type = _FILE_TYPE_REGULAR;
+	pFileContext->sync_flag = STORAGE_OP_TYPE_SOURCE_CREATE_FILE;
+	pFileContext->timestamp2log = pFileContext->extra_info.upload.start_time;
+	pFileContext->op = FDFS_STORAGE_FILE_OP_WRITE;
+	if (true)
+	{
+		pFileContext->extra_info.upload.file_type |= \
+					_FILE_TYPE_APPENDER;
+	}
+    pFileContext->extra_info.upload.if_gen_filename = true;
+	pFileContext->open_flags = O_RDWR | O_CREAT|O_TRUNC | g_extra_open_file_flags;
+    *filename = "\0";
+    filename_len = 0;
+    if ((result=storage_get_filename(pClientInfo, g_current_time, \
+			file_bytes, crc32, pFileContext->extra_info.upload.formatted_ext_name, filename, \
+			&filename_len, pFileContext->filename)) != 0)
+	{
+		return result;
+	}
+    printf("%s\t%s\t%s",filename, pFileContext->filename, pFileContext->extra_info.upload.formatted_ext_name);
+
+    // pFileContext->continue_callback = storage_nio_notify;
+    return storage_write_to_file(pTask, file_offset, file_bytes, \
+            p - pTask->data, dio_create_empty_file, \
+			storage_upload_file_done_callback, \
+			dio_create_file_finish_clean_up, store_path_index);
+}
+
 /**
 1 byte: store path index
 8 bytes: file size 
@@ -8470,6 +8580,13 @@ int storage_deal_task(struct fast_task_info *pTask)
 				ACCESS_LOG_ACTION_RENAME_FILE,
 				result);
 			break;
+        case STORAGE_PROTO_CMD_CREATE_EMPTY_FILE:
+            ACCESS_LOG_INIT_FIELDS();
+            result = storage_server_create_empty_file(pTask);
+            STORAGE_ACCESS_LOG(pTask,
+				STORAGE_PROTO_CMD_CREATE_EMPTY_FILE,
+				result);
+            break;
 		default:
 			logError("file: "__FILE__", line: %d, "  \
 				"client ip: %s, unkown cmd: %d", \

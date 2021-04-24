@@ -828,6 +828,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	int new_store_path;
 	int master_filename_len;
 	int prefix_len;
+    int64_t file_size1;
 
 	*remote_filename = '\0';
 	new_store_path = store_path_index;
@@ -887,7 +888,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	{
 		*p++ = (char)new_store_path;
 	}
-
+    file_size1 = 100000;
 	long2buff(file_size, p);
 	p += FDFS_PROTO_PKG_LEN_SIZE;
 
@@ -935,6 +936,7 @@ int storage_do_upload_file(ConnectionInfo *pTrackerServer, \
 	long2buff((p - out_buff) + file_size - sizeof(TrackerHeader), \
 		pHeader->pkg_len);
 	pHeader->cmd = cmd;
+    logError("%d", pHeader->cmd);
 	pHeader->status = 0;
 
 	if ((result=tcpsenddata_nb(pStorageServer->sock, out_buff, \

@@ -101,6 +101,8 @@
 #define STORAGE_PROTO_CMD_REGENERATE_APPENDER_FILENAME 38  //since V6.02, rename appender file to normal file
 #define STORAGE_PROTO_CMD_SYNC_RENAME_FILE		       40  //since V6.02
 
+#define STORAGE_PROTO_CMD_CREATE_EMPTY_FILE         50 //since 2021-04-24 by zhanghongquan 
+
 //for overwrite all old metadata
 #define STORAGE_SET_METADATA_FLAG_OVERWRITE	'O'
 #define STORAGE_SET_METADATA_FLAG_OVERWRITE_STR	"O"

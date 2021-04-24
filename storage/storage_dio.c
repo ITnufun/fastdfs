@@ -401,6 +401,115 @@ int dio_read_file(struct fast_task_info *pTask)
 	return result;
 }
 
+int dio_create_empty_file(struct fast_task_info *pTask){
+    StorageClientInfo *pClientInfo;
+	StorageFileContext *pFileContext;
+	int result;
+	int write_bytes;
+	char *pDataBuff;
+
+	pClientInfo = (StorageClientInfo *)pTask->arg;
+	pFileContext = &(pClientInfo->file_context);
+	result = 0;
+	do
+	{
+	if (pFileContext->fd < 0)
+	{
+		if (pFileContext->extra_info.upload.before_open_callback!=NULL)
+		{
+			result = pFileContext->extra_info.upload. \
+					before_open_callback(pTask);
+			if (result != 0)
+			{
+				break;
+			}
+		}
+
+		if ((result=dio_open_file(pFileContext)) != 0)
+		{
+			break;
+		}
+	}
+
+	pDataBuff = pTask->data + pFileContext->buff_offset;
+	write_bytes = pTask->length - pFileContext->buff_offset;
+	if (fc_safe_create(pFileContext->fd, write_bytes) != 0)
+	{
+		result = errno != 0 ? errno : EIO;
+		logError("file: "__FILE__", line: %d, " \
+			"write to file: %s fail, fd=%d, write_bytes=%d, " \
+			"errno: %d, error info: %s", \
+			__LINE__, pFileContext->filename, \
+			pFileContext->fd, write_bytes, \
+			result, STRERROR(result));
+	}
+
+	pthread_mutex_lock(&g_dio_thread_lock);
+	g_storage_stat.total_file_write_count++;
+	if (result == 0)
+	{
+		g_storage_stat.success_file_write_count++;
+	}
+	pthread_mutex_unlock(&g_dio_thread_lock);
+
+	if (result != 0)
+	{
+		break;
+	}
+
+	/*
+	logInfo("###dio write bytes: %d, pTask->length=%d, buff_offset=%d", \
+		write_bytes, pTask->length, pFileContext->buff_offset);
+	*/
+
+
+		if (pFileContext->calc_crc32)
+		{
+			pFileContext->crc32 = CRC32_FINAL( \
+						pFileContext->crc32);
+		}
+
+		if (pFileContext->calc_file_hash)
+		{
+			if (g_file_signature_method == STORAGE_FILE_SIGNATURE_METHOD_HASH)
+			{
+				FINISH_HASH_CODES4(pFileContext->file_hash_codes)
+			}
+			else
+			{
+				my_md5_final((unsigned char *)(pFileContext-> \
+				file_hash_codes), &pFileContext->md5_context);
+			}
+		}
+
+		if (pFileContext->extra_info.upload.before_close_callback != NULL)
+		{
+			result = pFileContext->extra_info.upload. \
+					before_close_callback(pTask);
+		}
+
+		/* file write done, close it */
+		close(pFileContext->fd);
+		pFileContext->fd = -1;
+
+		if (pFileContext->done_callback != NULL)
+		{
+			pFileContext->done_callback(pTask, result);
+		}
+	
+
+	return 0;
+	} while (0);
+
+	pClientInfo->clean_func(pTask);
+
+	if (pFileContext->done_callback != NULL)
+	{
+		pFileContext->done_callback(pTask, result);
+	}
+	return result;
+}
+
 int dio_write_file(struct fast_task_info *pTask)
 {
 	StorageClientInfo *pClientInfo;
@@ -687,6 +796,29 @@ void dio_append_finish_clean_up(struct fast_task_info *pTask)
 }
 
 void dio_modify_finish_clean_up(struct fast_task_info *pTask)
+{
+	StorageFileContext *pFileContext;
+
+	pFileContext = &(((StorageClientInfo *)pTask->arg)->file_context);
+	if (pFileContext->fd > 0)
+	{
+		/* if file does not write to the end, log error info
+                */
+		if (pFileContext->offset >= pFileContext->start && \
+		    pFileContext->offset < pFileContext->end)
+		{
+			logError("file: "__FILE__", line: %d, " \
+				"client ip: %s, modify file: %s fail", \
+				__LINE__, pTask->client_ip, \
+				pFileContext->filename);
+		}
+
+		close(pFileContext->fd);
+		pFileContext->fd = -1;
+	}
+}
+
+void dio_create_file_finish_clean_up(struct fast_task_info *pTask)
 {
 	StorageFileContext *pFileContext;
 

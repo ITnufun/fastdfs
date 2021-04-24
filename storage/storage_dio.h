@@ -54,12 +54,14 @@ int dio_truncate_file(struct fast_task_info *pTask);
 int dio_delete_normal_file(struct fast_task_info *pTask);
 int dio_delete_trunk_file(struct fast_task_info *pTask);
 int dio_discard_file(struct fast_task_info *pTask);
+int dio_create_empty_file(struct fast_task_info *pTask);
 
 void dio_read_finish_clean_up(struct fast_task_info *pTask);
 void dio_write_finish_clean_up(struct fast_task_info *pTask);
 void dio_append_finish_clean_up(struct fast_task_info *pTask);
 void dio_trunk_write_finish_clean_up(struct fast_task_info *pTask);
 void dio_modify_finish_clean_up(struct fast_task_info *pTask);
+void dio_create_file_finish_clean_up(struct fast_task_info *pTask);
 
 #define dio_truncate_finish_clean_up  dio_read_finish_clean_up
 

@@ -35,7 +35,7 @@ extern "C" {
 		store_path_index, local_filename, file_ext_name, \
 		meta_list, meta_count, group_name, file_id) \
 	storage_upload_by_filename1_ex(pTrackerServer, pStorageServer, \
-		store_path_index, STORAGE_PROTO_CMD_UPLOAD_FILE, \
+		store_path_index, 50, \
 		local_filename, file_ext_name, meta_list, meta_count, \
 		group_name, file_id)
 
